@@ -1,0 +1,407 @@
+%% =====================================================================
+%% REVIEW COPY
+%%   \ins{...}  -> bold          = text I added or rewrote
+%%   \del{...}  -> strikethrough = text I deleted
+%%   [[TODO: ...]] inside bold   = something only you can supply
+%%   "% [EDIT]" comments explain the reasoning for a change.
+%%   Abstract, Discussion, Limitations, Conclusion and References are
+%%   comment-only outlines (nothing renders for them).
+%%   For a clean copy, change \markuptrue to \markupfalse below:
+%%   deletions vanish and bold edits become normal text.
+%% =====================================================================
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[table]{xcolor}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{tcolorbox}
+\usepackage{float}
+\usepackage[normalem]{ulem} % [EDIT] added for strikethrough (\sout)
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.12}
+
+\definecolor{winblue}{RGB}{204,224,245}
+\definecolor{lossorange}{RGB}{253,224,196}
+
+\newcommand{\win}[1]{\cellcolor{winblue}\textbf{#1}~$\blacktriangle$}
+\newcommand{\lose}[1]{\cellcolor{lossorange}#1~$\blacktriangledown$}
+
+% ---- review-markup commands (added) ----
+\newif\ifmarkup
+\markuptrue % switch to \markupfalse for a clean copy
+\DeclareRobustCommand{\ins}[1]{\ifmarkup\textbf{#1}\else#1\fi}
+\DeclareRobustCommand{\del}[1]{\ifmarkup\sout{#1}\fi}
+
+% Optional: a reusable style
+\tcbset{
+  storybox/.style={
+    colback=gray!5,
+    colframe=gray!60,
+    boxrule=0.5pt,
+    arc=2pt,
+    left=6pt, right=6pt, top=4pt, bottom=4pt,
+    fonttitle=\bfseries\small,
+    fontupper=\small
+  }
+}
+
+\title{TeenyTinyStories: Using TinyStories to Write the Next TinyStories}
+\author{YF}
+\date{October 2026}
+
+\begin{document}
+
+\maketitle
+
+\ifmarkup
+\begin{center}
+\fbox{\parbox{0.92\linewidth}{\small\textbf{Review key.} \textbf{Bold} = added or rewritten text; \sout{strikethrough} = deleted text; \textbf{[[TODO: \dots]]} = content you need to supply. Abstract, Discussion, Limitations, Conclusion and References are comment-only outlines in the \LaTeX{} source. Delete this box (and set \texttt{\textbackslash markupfalse}) for a clean copy.}}
+\end{center}
+\fi
+
+% ---------------------------------------------------------------------
+% [EDIT] ABSTRACT -- not yet written. Suggested outline:
+% \begin{abstract}
+%  1. Motivation: synthetic pretraining corpora usually come from large/proprietary
+%     frontier LMs (costly, hard to reproduce).
+%  2. Question: can a small specialized LM (TinyStories-Instruct-33M) take over the
+%     generator role?
+%  3. Method: TTS corpus (2.51M stories, 502.5M tokens) generated with the TS seeding
+%     principle; GPT-Neo models at nominal 1M/33M trained on TTS and compared with the
+%     released TS models.
+%  4. Results: held-out loss (clear lead on TTS-val; 1M lead on TS-cap; near-ties
+%     elsewhere); LLM-judged quality (1M: Ministral favors TTS, Luna ~tie;
+%     33M: both judges favor TS); no near-duplicates between TTS and TS; vocabulary tail
+%     not thinner but phrase-level distribution narrower.
+%  5. Takeaway + release (dataset, models, code).
+% \end{abstract}
+% ---------------------------------------------------------------------
+
+\section{Introduction}
+Synthetic data produced by existing language models (LMs) has become an indispensable component in training the next generation of LMs [[cite]]. TinyStories (TS; Eldan \& Li, 2023) is a prominent example: it showed that a synthetic pretraining corpus of stories is enough to train very small models to write fluent, coherent English. This challenged the assumption that such capabilities only emerge in models of much larger size, and suggested that synthetic data quality and control can, within a narrow domain, partially substitute for scale. The authors released models trained on TS at several sizes from 1M to 33M parameters, along with an Instruct variant of the 33M model. However, most current synthetic data pipelines rely on generation from frontier models. The TS training dataset contains 2,119,489 stories consisting of 463.8M GPT-Neo tokens and a 21,990-story validation dataset, all written by GPT-3.5 and GPT-4. Such output is high in quality, but costly to query at scale, and because most such models are proprietary, hard to reproduce [[cite]]. The question therefore arises: could small, specialized LMs take over the frontier model’s role as the generator to produce controlled and consistent synthetic corpora that can effectively train new models?
+
+We test this by following Eldan and Li’s corpus generation pipeline, albeit with TinyStories-Instruct-33M as the generator to produce TeenyTinyStories (TTS), a corpus of 2,511,490 stories and 502.5M GPT-Neo-125M tokens, comparable in size to TS-train. We seed the generator with words and story features sampled from the empirical distributions of the TinyStories-Instruct data. We then train GPT-Neo-based models on TTS, identical in architecture to the released models trained on TS, and compare the two families. We consider one round of non-recursive generation by both models and anticipate two outcomes: if models trained on TTS match or exceed the released TS models in held-out loss on the TS validation set and in LLM-judged story quality, the frontier model may be redundant as a generator; if not, characterizing how and when quality degrades helps map the limits of synthetic data generated by small LMs. This is a bounded probe of the concerns raised about recursively training on model-generated data [[cite]], and not a test of them.
+
+We make two contributions in this paper. (1) We present TeenyTinyStories (TTS), a 502.5M-token corpus generated by TinyStories-Instruct-33M with structured header conditioning following the TS seeding principle, which we intend to release on HuggingFace under the CDLA-Sharing-1.0. We compare TTS and TS using 5-gram overlap and MinHash near-duplicate detection and find zero verified near-duplicate pairs, supporting TTS's independence from TS. (2) We train GPT-Neo models on TTS at nominal 1M and 33M sizes and compare held-out loss to the officially released TS models at equivalent sizes. Stories generated by the models from the same prompts are further compared by LLM-judged scalar scores in grammar, creativity and plot consistency (Ministral-Eval), and by pairwise LLM-judge Elo. Models trained on TTS are competitive on held-out TS validation loss, with a clear lead on TTS-val at both sizes and otherwise a 1M lead on TS-cap and near-ties elsewhere (Table~\ref{tab:loss}). On LLM-judged qualitative metrics, the picture is more mixed: at 33M both judges place TS-33M ahead of TTS-33M, whereas at 1M the Ministral judge favors TTS-1M and the GPT-5.6 Luna judge sees a near tie (Tables~\ref{tab:misteval} and~\ref{tab:elo}).
+
+
+\section{Related Work}
+\paragraph{Synthetic corpus generation for pretraining.} Recent work reports that LMs trained on synthetic pretraining corpora can perform competitively with models on far larger web corpora on selected benchmarks. For example, Cosmo-1B was trained on 6 epochs of a 30B token pretraining corpus, 25B tokens of which was synthetic data (Cosmopedia) generated by Mixtral-8x7B. Despite seeing far fewer tokens than TinyLlama-1B (which was trained on over 3T tokens of web and code data), Cosmo-1B outperformed it on MMLU, OpenBookQA, GSM8K and ARC-Challenge [[cite]]. Similarly, the 1.3B parameter Phi-1 model that was trained on a 7B token pretraining corpus, wherein 6B tokens were synthetic and generated by GPT-3.5 and GPT-4, outperformed models ten times its size, including StarCoder, WizardCoder, and GPT-3.5 on HumanEval and MBPP [[cite]]. These results suggest that synthetic data can be a viable alternative to much larger raw corpora for pretraining LMs, at least on some benchmarks. However, to our knowledge, most of these works rely on large LMs to generate the synthetic data rather than small LMs. Interestingly, Cosmopedia v2, which used Llama-3-70B-Instruct, Mixtral-8x22B-Instruct, and Qwen-1.5-72B-Chat to generate the pretraining corpora, found that scaling up generator size yielded little improvement in downstream models performance[[cite]]. This suggests that size may not be the only determining factor in the quality of synthetic data, and thus motivates our exploration of using a small LM as a generator for TTS to investigate whether it can produce a synthetic corpus that is competitive with TS.
+
+\paragraph{The TinyStories generation pipeline.} Small language models trained on raw data often suffer from incoherent output and limited reasoning capabilities [[cite]]. Eldan and Li [[cite]] asked whether this limit is inherent in small models, or simply due to the noise and breadth of data they are trained on. To test this, they produced a tightly controlled, synthetically generated corpus of stories restricted to the vocabulary of a young child, which narrows the domain while keeping the core elements of language: grammar, narrative structure, and basic reasoning. The TS corpus involved providing GPT-3.5 and GPT-4 with a seeding prompt composed of a list of required words (one verb, one noun, one adjective), and optional story features (e.g. dialogue, bad ending, moral value, plot twist\ldots) to generate a story written in words understandable by a three-year-old.
+
+\begin{figure}[H]
+  \centering
+  \begin{tcolorbox}[storybox, title={TinyStories prompt and generated story}]
+    \textbf{Prompt:} Write a short story (3--5 paragraphs) which only uses
+    very simple words that a 3 year old child would likely understand.
+    The story should use the verb ``decorate'', the noun ``thunder'' and
+    the adjective ``ancient''. The story should have the following
+    features: the story should contain at least one dialogue, the story
+    has a bad ending. Remember to only use simple words! \\[4pt]
+    \textbf{Story (excerpt):} Once upon a time, in an ancient house,
+    there lived a girl named Lily. She loved to decorate her room with
+    pretty things. One day, she found a big box in the attic.
+    \ldots{} Suddenly, the roof fell down on the pretty decorations.
+    Lily was sad because her room was not pretty anymore.
+  \end{tcolorbox}
+  \caption{Example GPT-3.5 prompt and story from Eldan and Li (2023), reproduced from the original paper and truncated for space. The prompt supplies three seed words and two story features.}
+  \label{fig:ts-example}
+\end{figure}
+
+\paragraph{Evaluation of TinyStories models.} To test the range of models trained on the TS corpus, an important metric to evaluate the qualitative output of a model was introduced by Eldan \& Li. First, a set of 50 prompts was manually curated. Each model generated 10 stories from each prompt, and the stories were then evaluated by GPT-4 in grammar, creativity, and plot consistency. The written evaluation was given to GPT-4 again to give a score out of ten in the three dimensions for the response. Eldan \& Li showed that as final evaluation loss decreased, the qualitative scores increased, thus demonstrating at least a rough agreement between held-out loss and GPT-4's qualitative judgement. The results showed that all models performed well in grammar, though larger models performed better in creativity and consistency compared to smaller models. We adapt this pipeline for a small generator to produce TTS, and compare the performance of models trained on TTS with the released TS models as the baseline. 
+
+However, scalar quality scores are subjective and hard to standardize across judges. Pairwise comparison of outputs to the same prompts avoids this quantization. The Bradley-Terry model~\cite{bradley1952rank} aggregates such comparisons into a ranking by assuming
+\begin{equation}
+    P(i \succ j) = \frac{e^{\beta_i}}{e^{\beta_i} + e^{\beta_j}},
+\end{equation}
+where $\beta_i$ is the latent strength of model $i$. LMArena applies this model to LLMs, reporting strengths on an Elo-like scale~\cite{chiang2024chatbot}, wherein LM latent strengths, which in this case is a measure of LM generation quality, are standardised relative to a baseline model. A 400 elo difference between two models corresponds to 10:1 odds of winning:
+\begin{equation}
+    \text{Elo}_i = 400 \times \log_{10}\left(\frac{e^{\beta_i}}{e^{\beta_\text{baseline}}}\right).
+\end{equation}
+
+\paragraph{Risks of model collapse.} Importantly, recent results show that LMs trained recursively can suffer from ``model collapse,'' wherein the model's output quality degrades over time [[cite: Shumailov et al., 2024]]. Shumailov et al. traced the cause of this collapse to the forgetting of the true data distribution over successive generations, starting with low-probability tails disappearing before inevitably ``collapsing'' to point estimates with little variance. This is a concern for our work, as we are using a small LM to generate a synthetic corpus that will be used to train new models. However, we note that our work is not a test of recursive training, as we are only generating one round of data from the small LM. We do, however, investigate the quality of the generated data and compare it to the original TS corpus to assess whether there are any signs of the tail loss that precedes collapse.
+
+\section{Methods}
+We follow the seeding principle of TS to generate TTS. We give TinyStories-Instruct-33M one verb, one noun, one adjective, and an optional feature set as seeds. All seeds were drawn from the empirical distributions in the TinyStories-Instruct validation data. We format the input as a structured header (\texttt{Words:}, optional \texttt{Features:}, \texttt{Story:}), not the natural-language instruction of Eldan \& Li (refer to figure \ref{fig:tts-example} for an example prompt and story). Generations were filtered to discard stories under 30 tokens, stories reaching the 400-token cap without EOS, stories without terminal punctuation, and exact duplicates, with truncation at any trailing next-record header.
+
+The data was generated in 10 shards: shards 04--05 was generated on an Apple M1 Pro (502,445 stories, 20.0\%) and shards 00--03 and 06--09 on two RTX 4090 pods (2,009,045 stories, 80.0\%), with identical sampling settings (fp32, $T{=}1.0$, \texttt{top\_p}${=}1.0$) but distinct per-shard streams. Around 2,660,000 stories in total were generated throughout the pipeline. Of these, 5.20\% were discarded for reaching the token cap unfinished, 0.02\% were discarded for being too short, and 0.81\% were discarded for lacking terminal punctuation. There were no exact duplicates. The final corpus contains 2,511,490 stories in total. We refer to this new corpus as TeenyTinyStories (TTS). 
+
+\begin{figure}[H]
+  \centering
+  \begin{tcolorbox}[storybox, title={TeenyTinyStories prompt and generated story}]
+    \textbf{Header:}\\[-2pt]
+    \texttt{Words: squeeze, purse, crazy}\\
+    \texttt{Features: none}\\[4pt]
+    \textbf{Story (excerpt):} Once upon a time, there was a little girl named Lily. She had a pretty purse that she loved to carry around with her everywhere she went. One day, Lily went to the park with her mommy and daddy. She saw a big tree and wanted to climb it. 
+    \ldots
+    Lily and her family went for a walk in the park and had fun exploring new places. And Lily never forgot that crazy day when she saw the tree with the big trunk and climbed it.
+  \end{tcolorbox}
+  \caption{Example TinyStories-Instruct-33M prompt and story from TTS. The story is truncated for space.}
+  \label{fig:tts-example}
+\end{figure}
+
+TTS was then tokenized with the GPT-Neo-125M tokenizer (50,257 vocabulary, one EOS per story) and split with seed 1234 into a validation set of 20,000 stories and a training set of 2,491,490 stories (498.5M), comparable to the size of the TS training set (420.35M). The training set was then used to train models at nominal 1M and 33M sizes, using the GPT-Neo architecture in fp32 precision. The models were trained on a token budget equivalent to 20 epochs over written train tokens (15,212 steps $\times$ 655,360 tokens, 9.97B tokens total) with windows sampled at random with replacement, at a batch size of 1280 sequences of 512 tokens, a constant learning rate of $5\times10^{-4}$, weight decay 0.1, betas (0.9, 0.95), context 512 and clipping 1.0. Evaluation generations used plain temperature sampling with temperature $=0.8$, top-$k=0$ and top-$p=1.0$. The training was performed on a single NVIDIA RTX 5090 GPU. These choices follow those reported by Eldan \& Li (architecture and, where documented, hyperparameters) for TinyStories-1M and TinyStories-33M.
+
+\section{Evaluation}
+\textbf{Held-out loss on validation sets.} An important indicator of model performance is held-out loss on validation sets. We used the TTS validation set and the official TS validation file in two forms: full and capped to stories of at most 400 tokens to match the TTS generation cap. The validation sets were held out from training for both families.
+
+First, we compared the TTS training corpus with the TTS held-out validation corpus and the TS validation dataset to assess their similarity and rule out cross-dataset contamination. The TTS total (2,511,490 stories) is about 114$\times$ the TS validation file (21,990 stories), so all overlap must be measured in terms of story content. At the substory level, we counted token 5-gram overlap against the 498.5M-token TTS training stream: 29.7\% of TS-valid-capped 5-grams never occur in TTS training, compared with just 20.6\% for held-out TTS validation 5-grams. The bulk of the overlap is composed of generic formulaic phrases (e.g. ``Once upon a time,'' ``the end of the story'') that are consistent with the small word vocabulary, rather than evidence of copying. MinHash near-duplicate detection over word 5-gram shingle sets (128 permutations, Jaccard $\ge 0.8$) was also conducted to estimate pairwise Jaccard similarity across the corpora. We found zero verified near-duplicate pairs. Taken together, these checks found no sign that TS validation text appears in the TTS training data.
+
+To look for signs of the tail loss preceding model collapse, we compared equal-size word samples of TTS and the TS training set. We found no evidence of a thinner vocabulary tail; in fact, on lowercased word types TTS has more types (26,200) than TS (20,300) and a larger share of rare word types occurring at most 10 times (69\% compared to 53\%). This is a word-level comparison and differs from GPT-Neo token-ID counts, where TS has more distinct IDs than TTS. However, TTS is narrower in distribution at the phrase level, with fewer distinct word 2- to 4-grams and lower word unigram entropy (5.90 vs.\ 6.02). \ins{[[TODO: give the actual 2-, 3- and 4-gram counts.]] Taken together, the evidence is mixed: the vocabulary tail is not thinner, but phrase-level diversity is lower.} Taken together, the evidence is mixed: the distribution of TTS is not obviously thinner than TS vocabulary-wise, but it is slightly narrower at the phrase level.
+% [EDIT] Interpretation of this (what it does and does not say about collapse, and the caveat that extra
+% rare types may be malformed words rather than diversity) goes in Discussion.
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{@{}llccc@{}}
+    \toprule
+    & & \multicolumn{3}{c}{Loss (nats) / Perplexity} \\
+    \cmidrule(lr){3-5}
+    Size & Model (parameters) & TTS-val & TS-cap & TS-full \\
+    \midrule
+    \multirow{2}{*}{1M}
+      & TTS (3.7M)      & \win{1.987 / 7.29} & \win{2.369 / 10.69} & 2.385 / 10.86 \\
+      & TS (3.7M)  & \lose{\ins{2.196 / 8.99}} & \lose{\ins{2.456 / 11.66}}       & 2.418 / 11.22 \\
+    \midrule
+    \multirow{2}{*}{33M}
+      & TTS (68.5M)     & \win{1.293 / 3.64} & 1.539 / 4.66        & 1.529 / 4.61 \\
+      & TS (68.5M)  & \lose{\ins{1.598 / 4.94}} & 1.548 / 4.70        & 1.494 / 4.45 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Cross-entropy loss (nats per token) and perplexity on three
+  held-out sets. TS-cap and TS-full are the official TS validation text
+  (capped: stories of at most 400 tokens, 20,711 stories; full: all 21,990 stories) while TTS-val is the 20,000-story TTS validation set. Token counts are written tokens in full 512-token blocks (TTS-val 4,020,224; TS-cap 3,997,696; TS-full 4,666,880).
+  Within each size, blue~($\blacktriangle$) marks a lower loss than the
+  other model by more than 0.05 nats, orange~($\blacktriangledown$) a
+  higher loss by more than 0.05 nats, and uncolored cells are treated as
+  ties. The 0.05 threshold is a heuristic, not a
+  significance test. Each model is a single training seed, so results
+  should be read as a rough quantitative match rather than a ranking.
+  Parameter counts are actual counts including the 50,257-token
+  embedding; ``1M'' and ``33M'' are the nominal names.}
+  \label{tab:loss}
+\end{table}
+
+The results, shown in Table \ref{tab:loss}, indicate that the models trained on TTS have lower loss on TTS-val at both sizes, a lead at 1M on TS-cap, and near-ties elsewhere. The models trained on TTS both had lower losses on TTS-val than the released TS models, by 0.21 (1M) and 0.31 (33M) nats. On the TS validation sets the pattern is mixed. On TS-cap, our 1M model had lower loss by 0.087 nats; all other differences on the TS validation sets (at most 0.035) fall within our tie threshold, with the largest being TS-33M's nominal 0.035-nat edge on TS-full. Because held-out loss does not directly measure the quality of generated text, including grammatical correctness, creativity and plot consistency, we also evaluated generations with a scalar LLM-judge rubric (Ministral-Eval) and with pairwise Elo (Luna).
+% [EDIT] Moved to Discussion: "expected given in-distribution", the "competitive" interpretation, and the
+% hyperparameter-documentation caveat (-> Limitations). Also fixed the "GPT-Eval and Elo" naming mismatch.
+
+\paragraph{Ministral-Eval.}
+
+We use the GPT-Eval metric as introduced by Eldan \& Li as a primary qualitative evaluation of the models, albeit we used Ministral-14B as the judge rather than GPT-4. We manually prepared 50 prompts, each consisting of a short story beginning, and each model generated 10 completions for each prompt at $T=0.8$. The 2,000 total responses were then evaluated by Ministral-14B in grammar, creativity, and plot consistency. The written evaluation was given to Ministral-14B again to give a score out of ten in the three dimensions for the response. \ins{The judge was run at temperature 0. In the second turn it also reported an estimated reader age group (e.g., ``C (6--7)''); [[TODO: describe the age-group categories and say whether this output is used or ignored]]. Scores for 61 responses were recovered with a lenient parser (the judge added an extra field), and 5 responses (all degenerate TTS-1M outputs) received N/A and are counted as 0, the worst case for TTS-1M; [[TODO: report results with these 5 excluded as a sensitivity check]]. Confidence intervals are 95\% prompt-level bootstrap intervals, and paired differences are computed by resampling prompts jointly across models [[TODO: number of resamples]]. [[TODO: add the full judge prompts and rubric in an appendix.]]}
+% DRAFT DOTS for author rewrite (do not render):
+% - Protocol: Ministral-14B two-turn grading (assessment, then scores /10 + age group), 7 concurrent workers, temp 0.
+% - Coverage: 2000/2000 scored (61 via lenient parse of replies with a judge-improvised extra field; 5 N/A refusals, all TTS-1M degenerates, as nominal 0s worst case).
+% - Every gap below carries its 95\% prompt-bootstrap CI, and every paired CI excludes zero — no gap is called without one.
+% - 1M: TTS-1M ahead on all three dims (g +0.37 [+0.11,+0.64], c +0.31 [+0.13,+0.48], s +0.38 [+0.15,+0.59]).
+% - 33M: TS-33M ahead on all three dims (g -0.37 [-0.52,-0.23], c -0.38 [-0.54,-0.22], s -0.67 [-0.95,-0.39]); widest on consistency.
+
+\begin{table}[H]
+  \centering
+  \footnotesize
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    Model & Grammar & Creativity & Consistency \\
+    \midrule
+    TTS-1M & 4.99 [4.78, 5.19] & 4.66 [4.51, 4.80] & 3.29 [3.08, 3.50] \\
+    TS-1M & 4.61 [4.40, 4.85] & 4.35 [4.25, 4.45] & 2.91 [2.73, 3.12] \\
+    TTS-33M & 8.01 [7.85, 8.17] & 6.22 [6.09, 6.35] & 7.10 [6.81, 7.40] \\
+    TS-33M & 8.38 [8.24, 8.53] & 6.59 [6.46, 6.73] & 7.77 [7.51, 8.01] \\
+    \midrule
+    $\Delta$ 1M (TTS$-$TS) & +0.37 [+0.11, +0.64] & +0.31 [+0.13, +0.48] & +0.38 [+0.15, +0.59] \\
+    $\Delta$ 33M (TTS$-$TS) & $-$0.37 [$-$0.52, $-$0.23] & $-$0.38 [$-$0.54, $-$0.22] & $-$0.67 [$-$0.95, $-$0.39] \\
+    \bottomrule
+  \end{tabular}
+  \caption{Ministral-eval scores (/10): per-model means with 95\%
+  prompt-bootstrap CIs, plus paired TTS$-$TS differences with CIs.
+  2000/2000 scored (61 via lenient parse; 5 judge N/A refusals on
+  degenerate outputs counted as nominal 0s). TTS-1M leads on all three
+  dimensions, TS-33M leads on all three (widest on consistency).}
+  \label{tab:misteval}
+\end{table}
+
+From Table \ref{tab:misteval}, all dimensions rise sharply from the 1M to 33M models, as expected. While TTS-1M leads TS-1M on all three dimensions, \del{with the largest gap on grammar (+0.37)}\ins{with similar gaps on each (+0.31 to +0.38)}, TS-33M leads TTS-33M on all three dimensions, with the largest gap on consistency ($-$0.67). All paired differences have 95\% prompt-bootstrap CIs that exclude zero\del{, indicating that the differences are statistically significant}\ins{, so these differences are unlikely to be prompt-sampling noise (each model is a single training seed, so seed-to-seed variance is not captured)}. \del{Overall, the results suggest that models trained on TTS are competitive with the released TS models in terms of qualitative generation quality.}\ins{Thus TTS-33M does not match TS-33M in judged quality, even though the two have near-equal loss on the TS validation sets. An example grading call is shown in Figure~\ref{fig:ministral-easy-example}.}
+% [EDIT] Factual fix: the largest 1M gap is consistency (+0.38), not grammar (+0.37).
+% [EDIT] "Competitive" overstated the 33M result (TS-33M ahead on all three dimensions, CIs exclude zero).
+
+\begin{figure}[H]
+  \centering
+  \begin{tcolorbox}[storybox, title={Ministral grading call (TTS-33M)}]
+    \textbf{Beginning:} One night, a cat saw the moon \\[4pt]
+    \textbf{Completion (excerpt):} The cat was very bright and big. The moon did not like the cat. \ldots{} The cat was happy and went away with the moon. \\[4pt]
+    \textbf{Ministral assessment (turn 1, excerpt):} \textit{``Mostly grammatically correct, but there are a few awkward or unnatural phrasings \ldots{} `The cat wanted the moon to play with the moon' \ldots''} \\[4pt]
+    \textbf{Ministral scores (turn 2, verbatim):} \\
+    \texttt{Grammar: 5/10, Creativity: 4/10, Consistency: 3/10, Age group: C (6-7).}
+  \end{tcolorbox}
+  \caption{Full Ministral two-turn grading call on a prompt: assessment excerpt plus verbatim scores. Quoted with light truncation of the assessment for space.}
+  \label{fig:ministral-example}
+\end{figure}
+
+\paragraph{Pairwise-Elo}
+To further compare the models, we also utilize a Bradley--Terry Elo rating system \cite{chiang2024chatbot} introduced by LMArena to rank models based on pairwise comparisons of their completions to the given prompts.
+
+For each of the 50 manually prepared prompts, the first generation of each model was compared by GPT-5.6 Luna in a pairwise comparison, and it was asked to pick the better response, or declare a tie. The evaluation was conducted in both orders (A first, B second and vice versa) to account for any potential order bias. If Luna judged the two responses to be of equal quality, it was instructed to mark them as a tie. If the two verdicts disagreed, the comparison was marked as a tie. A win for model A was counted as the LLM judge preferring model A’s response over the other model’s response in the pair. A tie counts as a half-win. In total, 600 comparisons were conducted in this fashion. The results were then aggregated into a Bradley-Terry Elo rating system, with TS-1M chosen as the anchor score. The results are shown in \ins{Tables~\ref{tab:easy-cons} and~}\del{Table }\ref{tab:elo}. 
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    Pair & A wins & B wins & Half \\
+    \midrule
+    TTS-1M vs TTS-33M & 1 & 46 & 3 \\
+    TTS-1M vs TS-1M & 20 & 18 & 12 \\
+    TTS-1M vs TS-33M & 1 & 48 & 1 \\
+    TTS-33M vs TS-1M & 48 & 1 & 1 \\
+    TTS-33M vs TS-33M & 15 & 30 & 5 \\
+    TS-1M vs TS-33M & 2 & 47 & 1 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Consolidated Luna verdicts on easy prompts (T=0.8 raw generations, no truncation):
+  both-orders-agree wins for A / B, else half each (order disagreement or TIE).
+  n=50 prompts per pair. Scores: 1M pair 26.0:24.0; 33M pair 17.5:32.5.}
+  \label{tab:easy-cons}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{@{}lcc@{}}
+    \toprule
+    Model & Elo (Luna) & 95\% CIs \\
+    \midrule
+    TS-33M & 1610 & [1479, 1816] \\
+    TTS-33M & 1518 & [1418, 1688] \\
+    TTS-1M & 1012 & [927, 1100] \\
+    TS-1M & 1000 (anchor) & N/A \\
+    \bottomrule
+  \end{tabular}
+  \caption{Bradley-Terry Elo on easy prompts (TS-1M anchored at 1000) with 95\%
+  prompt-bootstrap CIs.
+  Ranking: TS-33M \del{$>$}\ins{$\gtrsim$} TTS-33M $\gg$ TTS-1M $\approx$ TS-1M\ins{ (the two 33M intervals overlap, so that ordering is directional only)}.}
+  \label{tab:elo}
+\end{table}
+
+The results demonstrate that at 33M, TS-33M had a lead over TTS-33M, with a win ratio of 32.5:17.5 overall. The Bradley--Terry fit (Table~\ref{tab:elo}) places TS-33M above TTS-33M at 1610 elo compared to 1518, but the 95\% intervals overlap, so we treat this ordering as directional rather than established. The same cannot be said for the 1M models, where TTS-1M and TS-1M being statistically indistinguishable, with TTS-1M having a win ratio of 26:24 compared to TS-1M. Be that as it may, both 33M models unsurprisingly rate far above the 1M models. This agrees with Ministral-Eval, which put TS ahead at 33M and the 33M models ahead compared to the 1M models, but not at 1M, where Ministral-Eval favors TTS-1M on all three dimensions while GPT-5.6 Luna sees a near tie. Figure~\ref{fig:luna-easy-example} shows one full pairwise comparison.
+
+\begin{figure}[H]
+  \centering
+  \begin{tcolorbox}[storybox, title={Luna judgement call}]
+    \textbf{Beginning:} One night, a cat saw the moon \\[4pt]
+    \textbf{Student A (TTS-33M, in full):} The cat was very bright and big. The moon did not like the cat. The moon was very scared. The cat wanted the moon to play with the moon. The moon did not want to play.
+
+    The moon had a bad idea. The moon tried to trick the cat. The moon hid behind a big tree. The cat could not find the cat. The cat did not know the moon was hidden. The cat was happy and went away with the moon. \\[4pt]
+    \textbf{Student B (TS-33M, in full):} in the sky. The cat wanted to catch the moon. The cat jumped and jumped, but the moon was too high. The cat was sad.
+
+    The cat tried again to catch the moon. But the moon was still too high. The cat did not give up. The cat jumped and jumped, but the moon stayed high. Then, the moon went down and down. The cat was very sad and tired. The cat went home and slept all night. \\[4pt]
+    \textbf{Luna, order ab (A=TTS-33M, B=TS-33M):} \\
+    \texttt{Verdict: B} \\[4pt]
+    \textbf{Luna, order ba (A=TS-33M, B=TTS-33M):} \\
+    \texttt{Verdict: A (TS-33M both orders).}
+  \end{tcolorbox}
+  \caption{Full Luna verdict on a prompt with untruncated texts (verdict-only template, no rationale requested). Both students made substantial matched attempts; both presentation orders select TS-33M; prompt, completions and verdicts quoted verbatim.}
+  \label{fig:luna-example}
+\end{figure}
+
+
+\section{Discussion}
+Therefore, we rule out the possibility of TTS being a collapsed version of TS, but we cannot rule out that the extra rare types in TTS are malformed words rather than diversity.
+
+\del{Overall, the results suggest that models trained on TTS are competitive with the released TS models in terms of held-out loss. However, given that Eldan \& Li did not include comprehensive documentation of the training process of the released models, we cannot rule out that differences in training hyperparameters may have contributed to the observed differences in loss. Furthermore, loss does not measure qualitative generation quality. To address this, we evaluated the models using GPT-Eval and Elo.}
+
+At 33M, TTS is near-tied with TS on TS-cap/TS-full loss and far ahead on TTS-val, yet the qualitative judges show a preference for TS-33M. This is particularly pronounced in the consistency dimension, where the gap is the widest (-0.67). This disagreement could be explained by the fact that a 33M generator's weaker narrative coherence limits what the student can learn about long-range consistency, which token-level loss does not capture. This could be further tested by having judges evaluate the consistency of the generator's own stories, compared with TS stories.
+
+This situation is different at 1M, where TTS-1M is ahead of TS-1M on both loss and judged quality. Here, all metrics are in agreement, particularly between the loss and the Ministral-Eval scores. Despite TTS-1M only being +18 ahead of TS-1M in Elo, the gap could be
+
+% [EDIT] NOT YET WRITTEN -- outline plus the sentences I moved out of Evaluation.
+%
+% 1. Loss versus judged quality (main finding)
+%    - At 33M, TTS is near-tied with TS on TS-cap/TS-full loss and far ahead on TTS-val,
+%      yet both judges favor TS-33M (Ministral: all 3 dims, CIs exclude 0, widest on
+%      consistency -0.67; Luna: 30 vs 15 head-to-head, Elo 1610 vs 1518, overlapping CIs).
+%    - Candidate explanation: a 33M generator's weaker narrative coherence limits what the
+%      student can learn about long-range consistency, which token-level loss does not capture.
+%      Label as hypothesis unless you test it (e.g., consistency of the generator's own
+%      stories judged by Ministral, compared with TS stories).
+%    - MOVED (from Evaluation, rewrite): "Loss does not measure qualitative generation
+%      quality."
+%
+% 2. Why TTS-1M does well
+%    - Possible reasons: the simpler/narrower TTS distribution suits very small capacity;
+%      judges may reward grammar/simplicity; 5 degenerate TTS-1M outputs were counted as zeros
+%      (so the lead is conservative on that point).
+%    - Be explicit that this is speculation unless tested.
+%
+% 3. Loss results: in-distribution effect
+%    - MOVED (from Evaluation): "This is expected given that TTS-val comes from the
+%      distribution they were trained on."
+%    - MOVED: "On the TS validation sets the pattern is mixed, consistent with TTS-val being the
+%      easier in-distribution set for TTS-trained models."
+%
+% 4. Independence of TTS from TS
+%    - MOVED (soften): "TTS is independent of TS, so the TS validation scores measure
+%      out-of-distribution generalization rather than memorization." Say what 5-gram overlap
+%      (29.7% vs 20.6% unseen) and zero MinHash pairs do and do not establish (e.g., they do not rule
+%      out the generator having memorized TS during its own training).
+%
+% 5. Tail loss and model collapse
+%    - Mixed evidence: more word types (26,200 vs 20,300) and more rare types (69% vs 53%),
+%      but narrower phrase-level distribution and lower unigram entropy (5.90 vs 6.02).
+%    - Caveat: extra rare word types may be malformed or misspelled words from a small
+%      generator, not true diversity -- check by sampling rare types.
+%    - Reiterate that this is one round of generation, not a recursive-training test.
+%
+% 6. Judge reliability
+%    - Ministral (14B) vs Luna disagree on magnitude at 1M; discuss judge bias, position bias
+%      (both-order protocol), self-preference, and the absence of human validation.
+%
+% 7. Answer to the research question
+%    - A small generator can substitute for a frontier one at 1M scale (loss lead on TS-cap,
+%      Ministral lead, Luna tie) but not yet at 33M in judged quality.
+%
+% 8. Limitations (could be its own \section{Limitations} before the Conclusion)
+%    - MOVED (from Evaluation): hyperparameter-documentation caveat -- "Eldan & Li did not
+%      include comprehensive documentation of the training process of the released models, so we
+%      cannot rule out that differences in training hyperparameters contributed to the loss
+%      differences."
+%    - Single training seed per model; 0.05-nat tie threshold is heuristic, not a test.
+%    - One generator, one round, one temperature (T=0.8), 50 prompts, easy prompts only,
+%      two LLM judges, no human validation.
+%    - Future work: multiple seeds, recursive rounds, hard prompts, human ratings, larger
+%      generators as a comparison.
+% ---------------------------------------------------------------------
+
+\section{Conclusion}
+% ---------------------------------------------------------------------
+% [EDIT] NOT YET WRITTEN -- suggested outline (3-5 sentences):
+%  - Restate the question and the approach (TTS corpus generated by TinyStories-Instruct-33M,
+%    GPT-Neo 1M/33M students vs released TS models).
+%  - Headline result: competitive held-out loss at both sizes; judged quality competitive or
+%    better at 1M but behind TS at 33M (both judges).
+%  - Implication: small generators can seed useful corpora at small scale; token-level loss
+%    can hide differences in narrative consistency.
+%  - Caveats and next steps in one sentence (seeds, recursion, human evaluation).
+%  - Release statement: corpus, checkpoints and code (hosting location and licence).
+% ---------------------------------------------------------------------
+
+% ---------------------------------------------------------------------
+% [EDIT] REFERENCES -- no bibliography is set up yet. Once references.bib exists
+% (including keys bradley1952rank and chiang2024chatbot), add:
+% \bibliographystyle{plain}
+% \bibliography{references}
+% and replace every [[cite]] with the matching \cite{...}.
+% ---------------------------------------------------------------------
+
+\end{document}
